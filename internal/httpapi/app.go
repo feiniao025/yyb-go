@@ -123,19 +123,67 @@ func (a *App) Handler() http.Handler {
 	})
 	router.Any("/docs/*path", gin.WrapF(a.handleDocs))
 	router.Any("/openapi.json", gin.WrapF(a.handleOpenAPI))
-	router.Any("/login", gin.WrapF(handleLogin))
-	router.POST("/account/password", gin.WrapF(handlePasswordChange))
-	router.POST("/account/logout", gin.WrapF(handleLogout))
+	router.Any("/login", gin.WrapF(a.handleLogin))
+	router.Any("/register", gin.WrapF(a.handleRegister))
+	router.POST("/account/password", gin.WrapF(a.handlePasswordChange))
+	router.POST("/account/logout", gin.WrapF(a.handleLogout))
+	router.Any("/account/me", func(c *gin.Context) {
+		if c.Request.Method != http.MethodGet {
+			writeError(c.Writer, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		id, ok := a.currentIdentity(c.Writer, c.Request)
+		if !ok {
+			writeError(c.Writer, http.StatusUnauthorized, "invalid api token")
+			return
+		}
+		writeJSON(c.Writer, http.StatusOK, gin.H{
+			"username": id.username,
+			"role":     map[bool]string{true: "admin", false: "user"}[id.isAdmin],
+		})
+	})
 	router.Any("/health", func(c *gin.Context) {
 		writeJSON(c.Writer, http.StatusOK, gin.H{"ok": true})
 	})
-	router.GET("/token", func(c *gin.Context) {
-		writeJSON(c.Writer, 200, gin.H{"token": currentAPIToken()})
+	router.Any("/token", func(c *gin.Context) {
+		if c.Request.Method != http.MethodGet {
+			writeError(c.Writer, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		id, ok := a.currentIdentity(c.Writer, c.Request)
+		if !ok {
+			writeError(c.Writer, http.StatusUnauthorized, "invalid api token")
+			return
+		}
+		if id.isAdmin {
+			writeJSON(c.Writer, 200, gin.H{"token": currentAPIToken()})
+			return
+		}
+		u, err := a.db.GetUser(c.Request.Context(), id.userID)
+		if err != nil || u == nil {
+			writeError(c.Writer, http.StatusUnauthorized, "user not found")
+			return
+		}
+		writeJSON(c.Writer, 200, gin.H{"token": u.APIToken})
 	})
 	router.POST("/token/rotate", func(c *gin.Context) {
-		newToken, rotated := rotateAPIToken()
-		if !rotated {
-			writeError(c.Writer, http.StatusForbidden, "token 由环境变量 YYB_API_TOKEN 配置，不支持在页面更换")
+		id, ok := a.currentIdentity(c.Writer, c.Request)
+		if !ok {
+			writeError(c.Writer, http.StatusUnauthorized, "invalid api token")
+			return
+		}
+		if id.isAdmin {
+			newToken, rotated := rotateAPIToken()
+			if !rotated {
+				writeError(c.Writer, http.StatusForbidden, "token 由环境变量 YYB_API_TOKEN 配置，不支持在页面更换")
+				return
+			}
+			writeJSON(c.Writer, 200, gin.H{"token": newToken})
+			return
+		}
+		newToken := randomToken()
+		if err := a.db.UpdateUserToken(c.Request.Context(), id.userID, newToken); err != nil {
+			writeError(c.Writer, http.StatusInternalServerError, err.Error())
 			return
 		}
 		writeJSON(c.Writer, 200, gin.H{"token": newToken})
@@ -147,6 +195,11 @@ func (a *App) Handler() http.Handler {
 	router.Any("/accounts/avatar", gin.WrapF(a.handleAccountAvatar))
 	router.Any("/accounts/refresh", gin.WrapF(a.handleAccountRefresh))
 	router.Any("/accounts/resync", gin.WrapF(a.handleAccountResync))
+	router.Any("/admin/users", gin.WrapF(a.handleAdminListUsers))
+	router.POST("/admin/users/:id/disable", gin.WrapF(a.handleAdminDisableUser))
+	router.POST("/admin/users/:id/enable", gin.WrapF(a.handleAdminEnableUser))
+	router.POST("/admin/users/:id/password", gin.WrapF(a.handleAdminResetPassword))
+	router.DELETE("/admin/users/:id", gin.WrapF(a.handleAdminDeleteUser))
 	router.Any("/wxapp/getCode", gin.WrapF(a.handleGetCode))
 	router.Any("/wxapp/getPhoneNumber", gin.WrapF(a.handleGetPhoneNumber))
 	router.Any("/wxapp/operateWxData", gin.WrapF(a.handleOperateWXData))
@@ -154,7 +207,7 @@ func (a *App) Handler() http.Handler {
 		writeError(c.Writer, http.StatusNotFound, "not found")
 	})
 
-	return authMiddleware(router)
+	return a.authMiddleware(router)
 }
 
 func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -302,7 +355,12 @@ func (a *App) handleQR(w http.ResponseWriter, r *http.Request) {
 		if ui, err := a.qr.LoginBuffers().FetchUserInfo(r.Context(), result.Credentials); err == nil {
 			userInfo = ui
 		}
-		acc, err := a.storeFromScan(r.Context(), result.LoginBuffer, result.Credentials, userInfo)
+		id, ok := a.currentIdentity(w, r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "invalid api token")
+			return
+		}
+		acc, err := a.storeFromScan(r.Context(), result.LoginBuffer, result.Credentials, userInfo, id.ownerID())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -321,7 +379,12 @@ func (a *App) handleAccountsRoot(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		accounts, err := a.db.ListAccounts(r.Context())
+		id, ok := a.currentIdentity(w, r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "invalid api token")
+			return
+		}
+		accounts, err := a.db.ListAccountsByOwner(r.Context(), id.ownerID())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -508,7 +571,12 @@ func (a *App) callWXApp(w http.ResponseWriter, r *http.Request, requirePayload b
 		return
 	}
 	if body.Ref == "" {
-		accounts, err := a.db.ListAccounts(r.Context())
+		id, ok := a.currentIdentity(w, r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "invalid api token")
+			return
+		}
+		accounts, err := a.db.ListAccountsByOwner(r.Context(), id.ownerID())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -579,11 +647,34 @@ func (a *App) resolveAccountRef(w http.ResponseWriter, r *http.Request, ref stri
 		}
 		return nil, false
 	}
+	id, ok := a.currentIdentity(w, r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "invalid api token")
+		return nil, false
+	}
+	if !a.canAccessAccount(id, acc) {
+		writeError(w, http.StatusNotFound, "account not found: "+ref)
+		return nil, false
+	}
 	return acc, true
 }
 
+// canAccessAccount reports whether id may operate on acc. Admins may access
+// every account; regular users only their own (owner_id == userID).
+func (a *App) canAccessAccount(id identity, acc *store.WechatAccount) bool {
+	if id.isAdmin {
+		return true
+	}
+	return acc.OwnerID != nil && *acc.OwnerID == id.userID
+}
+
 func (a *App) refreshAll(w http.ResponseWriter, r *http.Request) {
-	accounts, err := a.db.ListAccounts(r.Context())
+	id, ok := a.currentIdentity(w, r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "invalid api token")
+		return
+	}
+	accounts, err := a.db.ListAccountsByOwner(r.Context(), id.ownerID())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -596,7 +687,12 @@ func (a *App) refreshAll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) resyncAll(w http.ResponseWriter, r *http.Request) {
-	accounts, err := a.db.ListAccounts(r.Context())
+	id, ok := a.currentIdentity(w, r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "invalid api token")
+		return
+	}
+	accounts, err := a.db.ListAccountsByOwner(r.Context(), id.ownerID())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -628,12 +724,12 @@ func (a *App) serveAvatar(w http.ResponseWriter, r *http.Request, acc *store.Wec
 	writeError(w, http.StatusNotFound, "no avatar")
 }
 
-func (a *App) storeFromScan(ctx context.Context, loginBuffer string, creds protocol.LoginBufferCredentials, userInfo map[string]any) (*store.WechatAccount, error) {
+func (a *App) storeFromScan(ctx context.Context, loginBuffer string, creds protocol.LoginBufferCredentials, userInfo map[string]any, ownerID *int64) (*store.WechatAccount, error) {
 	openid := creds.OpenID
 	nick := pickNickname(userInfo, creds.Nickname)
 	avatar := a.resolveAvatar(ctx, openid, userInfo)
 	status := "alive"
-	return a.db.UpsertAccount(ctx, openid, loginBuffer, stringPtrMaybe(nick), stringPtrMaybe(nick), stringPtrMaybe(avatar), userInfo, creds.ToMap(), &status)
+	return a.db.UpsertAccount(ctx, openid, loginBuffer, stringPtrMaybe(nick), stringPtrMaybe(nick), stringPtrMaybe(avatar), userInfo, creds.ToMap(), &status, ownerID)
 }
 
 func (a *App) refreshLiveness(ctx context.Context, acc *store.WechatAccount) string {

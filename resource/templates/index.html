@@ -531,6 +531,17 @@
       background: var(--bg);
     }
 
+    .btn.danger {
+      border-color: rgba(248, 113, 113, 0.4);
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
+
+    .btn.danger:hover {
+      background: rgba(248, 113, 113, 0.22);
+      border-color: var(--danger);
+    }
+
     .btn:disabled {
       cursor: not-allowed;
       opacity: 0.55;
@@ -671,6 +682,62 @@
       padding: 18px;
       text-align: center;
       font-size: 13px;
+    }
+
+    /* 用户管理 */
+    .user-table-wrap {
+      overflow-x: auto;
+      padding: 16px;
+    }
+
+    .user-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .user-table th,
+    .user-table td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+      white-space: nowrap;
+    }
+
+    .user-table th {
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .user-table tbody tr:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .user-table .user-role {
+      color: var(--muted);
+    }
+
+    .user-table .user-disabled {
+      color: var(--danger, #f87171);
+    }
+
+    .user-table .user-alive {
+      color: var(--ok, #34d399);
+    }
+
+    .user-table .user-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .user-table .btn {
+      font-size: 12px;
+      padding: 5px 10px;
+    }
+
+    .user-table td.empty-state {
+      border-bottom: none;
     }
 
     /* 调用配置 */
@@ -936,6 +1003,9 @@
         <button class="nav-item" type="button" data-module="docs">
           <span class="nav-ico">&#128220;</span>配置文档
         </button>
+        <button class="nav-item hidden" id="navUsers" type="button" data-module="users">
+          <span class="nav-ico">&#128101;</span>用户管理
+        </button>
       </nav>
       <div class="side-foot">
         <span>服务：<strong id="footHealth">检测中</strong></span>
@@ -1081,6 +1151,39 @@
                   <b>扫码页面</b>
                   <span>添加新的微信账号</span>
                 </a>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section class="module" id="module-users">
+          <section class="panel" aria-label="用户管理">
+            <div class="section-head">
+              <div class="section-title">
+                <h3>用户管理</h3>
+                <p>管理已注册用户：禁用/启用、重置密码、删除</p>
+              </div>
+              <div class="panel-actions">
+                <button class="btn secondary" id="reloadUsersBtn" type="button">重新加载</button>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="user-table-wrap">
+                <table class="user-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>用户名</th>
+                      <th>角色</th>
+                      <th>状态</th>
+                      <th>注册时间</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="userTableBody">
+                    <tr><td colspan="6" class="empty-state">用户加载中</td></tr>
+                  </tbody>
+                </table>
               </div>
             </div>
           </section>
@@ -1415,6 +1518,23 @@
       }
     }
 
+    async function loadMe() {
+      try {
+        const data = await api("GET", "/account/me");
+        if (data.username) {
+          $("userName").textContent = data.username;
+          const initial = data.username.slice(0, 1).toUpperCase();
+          $("userAvatar").textContent = initial;
+        }
+        if (data.role === "admin") {
+          $("navUsers").classList.remove("hidden");
+          loadUsers();
+        }
+      } catch {
+        // ignore; fall back to default label
+      }
+    }
+
     async function rotateToken() {
       const button = $("rotateTokenBtn");
       button.disabled = true;
@@ -1473,8 +1593,96 @@
       }
     }
 
+    /* ---------- 用户管理 ---------- */
+    function formatUserTime(ts) {
+      if (!ts) return "-";
+      const date = new Date(ts);
+      const pad = n => String(n).padStart(2, "0");
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    async function loadUsers() {
+      const body = $("userTableBody");
+      body.innerHTML = `<tr><td colspan="6" class="empty-state">用户加载中</td></tr>`;
+      try {
+        const users = await api("GET", "/admin/users");
+        if (!users.length) {
+          body.innerHTML = `<tr><td colspan="6" class="empty-state">暂无已注册用户</td></tr>`;
+          return;
+        }
+        body.innerHTML = users.map(user => {
+          const statusHtml = user.disabled
+            ? `<span class="user-disabled">已禁用</span>`
+            : `<span class="user-alive">正常</span>`;
+          const toggleBtn = user.disabled
+            ? `<button class="btn secondary" type="button" data-action="enable" data-id="${user.id}" data-name="${escapeHTML(user.username)}">启用</button>`
+            : `<button class="btn secondary" type="button" data-action="disable" data-id="${user.id}" data-name="${escapeHTML(user.username)}">禁用</button>`;
+          return `<tr data-id="${user.id}">
+            <td>${user.id}</td>
+            <td>${escapeHTML(user.username)}</td>
+            <td class="user-role">${user.role === "admin" ? "管理员" : "普通用户"}</td>
+            <td>${statusHtml}</td>
+            <td>${formatUserTime(user.created_at)}</td>
+            <td>
+              <div class="user-actions">
+                ${toggleBtn}
+                <button class="btn secondary" type="button" data-action="password" data-id="${user.id}" data-name="${escapeHTML(user.username)}">重置密码</button>
+                <button class="btn danger" type="button" data-action="delete" data-id="${user.id}" data-name="${escapeHTML(user.username)}">删除</button>
+              </div>
+            </td>
+          </tr>`;
+        }).join("");
+        body.querySelectorAll("button[data-action]").forEach(button => {
+          button.addEventListener("click", () => userAction(button.dataset.action, button.dataset.id, button.dataset.name));
+        });
+        setActivity("用户列表已加载");
+      } catch (error) {
+        body.innerHTML = `<tr><td colspan="6" class="empty-state">用户加载失败：${escapeHTML(error.data?.detail || error.message)}</td></tr>`;
+        setActivity("用户列表加载失败");
+      }
+    }
+
+    async function userAction(action, id, name) {
+      if (action === "disable" && !window.confirm(`确定禁用用户「${name}」？其会话将立即失效，登录与 Token 将不可用。`)) {
+        return;
+      }
+      if (action === "delete" && !window.confirm(`确定删除用户「${name}」？其全部微信账号数据将一并删除，此操作不可恢复。`)) {
+        return;
+      }
+      if (action === "password") {
+        const next = window.prompt(`为用户「${name}」设置新密码（至少 6 位）：`);
+        if (!next) return;
+        try {
+          await api("POST", `/admin/users/${id}/password`, { new_password: next });
+          setActivity(`已重置用户「${name}」的密码`);
+        } catch (error) {
+          setActivity("重置密码失败：" + (error.data?.detail || error.message));
+          return;
+        }
+        await loadUsers();
+        return;
+      }
+      if (action === "delete") {
+        try {
+          await api("DELETE", `/admin/users/${id}`);
+          setActivity(`已删除用户：${name}`);
+        } catch (error) {
+          setActivity("删除失败：" + (error.data?.detail || error.message));
+        }
+        await loadUsers();
+        return;
+      }
+      try {
+        await api("POST", `/admin/users/${id}/${action}`);
+        setActivity(`已${action === "enable" ? "启用" : "禁用"}用户「${name}」`);
+      } catch (error) {
+        setActivity(`${action === "enable" ? "启用" : "禁用"}失败：${(error.data?.detail || error.message)}`);
+      }
+      await loadUsers();
+    }
+
     /* ---------- 模块切换 ---------- */
-    const modules = { accounts: "账号管理", invoke: "调用配置", token: "获取 Token", docs: "配置文档" };
+    const modules = { accounts: "账号管理", invoke: "调用配置", token: "获取 Token", docs: "配置文档", users: "用户管理" };
     function switchModule(name) {
       document.querySelectorAll(".nav-item").forEach(item => {
         item.classList.toggle("active", item.dataset.module === name);
@@ -1550,6 +1758,7 @@
 
     /* ---------- 事件绑定 ---------- */
     $("reloadAccountsBtn").addEventListener("click", loadAccounts);
+    $("reloadUsersBtn").addEventListener("click", loadUsers);
     $("refreshAllBtn").addEventListener("click", refreshAll);
     $("resyncAllBtn").addEventListener("click", resyncAll);
     $("featureSel").addEventListener("change", togglePayload);
@@ -1579,6 +1788,7 @@
     loadFeatures();
     loadAccounts();
     loadToken();
+    loadMe();
     setInterval(loadHealth, 15000);
   </script>
 </body>

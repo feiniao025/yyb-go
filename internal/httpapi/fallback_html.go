@@ -11,7 +11,7 @@ const fallbackIndexHTML = `<!doctype html><html lang="zh-CN"><meta charset="utf-
 <a style="padding:9px 14px;border-radius:8px;background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;text-decoration:none;font-weight:500;box-shadow:0 4px 14px rgba(59,130,246,.35)" href="/scan">扫码添加</a>
 <a style="padding:9px 14px;border-radius:8px;border:1px solid rgba(148,163,184,.32);color:#e6edf7;text-decoration:none" href="/docs/index.html">Swagger 文档</a>
 <a style="padding:9px 14px;border-radius:8px;border:1px solid rgba(148,163,184,.32);color:#e6edf7;text-decoration:none" href="/openapi.json">OpenAPI JSON</a>
-<button onclick="logout()" style="padding:9px 14px;border-radius:8px;border:1px solid rgba(148,163,184,.32);color:#e6edf7;background:rgba(255,255,255,.04);cursor:pointer">退出登录</button>
+<button onclick="logout()" style="padding:9px 14px;border-radius:8px;border:1px solid rgba(148,163,184,.32);color:#e6edf7;background:rgba(255,255,255,.04);cursor:pointer"><span id="meName">退出登录</span></button>
 </p>
 </section>
 <section style="background:rgba(17,24,39,.72);border:1px solid rgba(148,163,184,.16);border-radius:10px;padding:24px;margin-top:16px;box-shadow:0 12px 32px rgba(2,6,23,.6),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
@@ -37,10 +37,12 @@ const fallbackIndexHTML = `<!doctype html><html lang="zh-CN"><meta charset="utf-
 async function api(method,url,body){const opts={method,headers:{'Content-Type':'application/json'}};if(body!==undefined)opts.body=JSON.stringify(body);const resp=await fetch(url,opts);const text=await resp.text();let data=null;try{data=text?JSON.parse(text):null}catch(e){data=text}const isEnv=data&&typeof data==='object'&&!Array.isArray(data)&&Object.prototype.hasOwnProperty.call(data,'code')&&Object.prototype.hasOwnProperty.call(data,'msg')&&Object.prototype.hasOwnProperty.call(data,'data');if(!resp.ok||(isEnv&&data.code!==0)){throw new Error(isEnv?data.msg:'HTTP '+resp.status)}return isEnv?data.data:data}
 function activity(msg){document.getElementById('activityLine').textContent=msg}
 async function loadToken(){try{const d=await api('GET','/token');document.getElementById('apiTokenInput').value=d.token}catch(e){document.getElementById('apiTokenInput').value='获取失败: '+e.message}}
+async function loadMe(){try{const d=await api('GET','/account/me');document.getElementById('meName').textContent=d.username}catch(e){}}
 async function rotateToken(){try{const d=await api('POST','/token/rotate');document.getElementById('apiTokenInput').value=d.token;activity('API Token 已更换')}catch(e){activity('更换失败: '+e.message)}}
 async function changePassword(){const oldPassword=document.getElementById('oldPassInput').value;const newPassword=document.getElementById('newPassInput').value;if(!oldPassword||!newPassword){activity('请填写旧密码和新密码');return}try{await api('POST','/account/password',{old_password:oldPassword,new_password:newPassword});activity('密码已修改，请重新登录');setTimeout(function(){location.href='/login'},1200)}catch(e){activity('修改失败: '+e.message)}}
 async function logout(){try{await api('POST','/account/logout')}catch(e){}location.href='/login'}
 loadToken();
+loadMe();
 </script>
 </body></html>`
 

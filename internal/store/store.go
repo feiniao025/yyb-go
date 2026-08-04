@@ -18,6 +18,7 @@ const schema = `
 CREATE TABLE IF NOT EXISTS wechat_accounts (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     openid          TEXT    NOT NULL UNIQUE,
+    owner_id        INTEGER,
     uin             INTEGER,
     alias           TEXT,
     nickname        TEXT,
@@ -31,6 +32,19 @@ CREATE TABLE IF NOT EXISTS wechat_accounts (
     updated_at      INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_wxacc_uin ON wechat_accounts(uin);
+CREATE INDEX IF NOT EXISTS idx_wxacc_owner ON wechat_accounts(owner_id);
+
+CREATE TABLE IF NOT EXISTS users (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    username   TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+    password   TEXT    NOT NULL,
+    api_token  TEXT    NOT NULL UNIQUE,
+    role       TEXT    NOT NULL DEFAULT 'user',
+    disabled   INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_users_api_token ON users(api_token);
 
 CREATE TABLE IF NOT EXISTS sessions (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,6 +86,7 @@ type DB struct {
 type WechatAccount struct {
 	ID            int64          `json:"id"`
 	OpenID        string         `json:"openid"`
+	OwnerID       *int64         `json:"owner_id,omitempty"`
 	UIN           *int64         `json:"uin,omitempty"`
 	Alias         *string        `json:"alias,omitempty"`
 	Nickname      *string        `json:"nickname,omitempty"`
@@ -83,6 +98,17 @@ type WechatAccount struct {
 	LastCheckedAt *int64         `json:"last_checked_at,omitempty"`
 	CreatedAt     int64          `json:"created_at"`
 	UpdatedAt     int64          `json:"updated_at"`
+}
+
+type User struct {
+	ID        int64  `json:"id"`
+	Username  string `json:"username"`
+	Password  string `json:"-"`
+	APIToken  string `json:"api_token"`
+	Role      string `json:"role"`
+	Disabled  bool   `json:"disabled"`
+	CreatedAt int64  `json:"created_at"`
+	UpdatedAt int64  `json:"updated_at"`
 }
 
 type AccountPublic struct {
@@ -143,6 +169,14 @@ func Open(path string) (*DB, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if err = migrateOwnerColumn(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err = migrateUserDisabledColumn(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	if _, err = db.ExecContext(ctx, schema); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -196,6 +230,111 @@ func (db *DB) SetSetting(ctx context.Context, key, value string) error {
 	return err
 }
 
+const selectUserColumns = "id, username, password, api_token, role, disabled, created_at, updated_at"
+
+// CreateUser inserts a new user. It returns ErrUserExists when the username
+// (case-insensitive) or api token is already taken.
+func (db *DB) CreateUser(ctx context.Context, username, passwordHash, apiToken string) (*User, error) {
+	now := time.Now().Unix()
+	_, err := db.sql.ExecContext(ctx,
+		`INSERT INTO users(username, password, api_token, role, disabled, created_at, updated_at)
+		 VALUES(?,?,?, 'user', 0, ?,?)`,
+		username, passwordHash, apiToken, now, now,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return db.GetUserByUsername(ctx, username)
+}
+
+func (db *DB) GetUser(ctx context.Context, id int64) (*User, error) {
+	row := db.sql.QueryRowContext(ctx, "SELECT "+selectUserColumns+" FROM users WHERE id=?", id)
+	return scanUser(row)
+}
+
+func (db *DB) GetUserByUsername(ctx context.Context, username string) (*User, error) {
+	row := db.sql.QueryRowContext(ctx, "SELECT "+selectUserColumns+" FROM users WHERE username=? COLLATE NOCASE", username)
+	return scanUser(row)
+}
+
+func (db *DB) GetUserByToken(ctx context.Context, apiToken string) (*User, error) {
+	row := db.sql.QueryRowContext(ctx, "SELECT "+selectUserColumns+" FROM users WHERE api_token=?", apiToken)
+	return scanUser(row)
+}
+
+// ListUsers returns all registered users ordered by id.
+func (db *DB) ListUsers(ctx context.Context) ([]*User, error) {
+	rows, err := db.sql.QueryContext(ctx, "SELECT "+selectUserColumns+" FROM users ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// SetUserDisabled updates the disabled flag of a user.
+func (db *DB) SetUserDisabled(ctx context.Context, id int64, disabled bool) error {
+	flag := 0
+	if disabled {
+		flag = 1
+	}
+	_, err := db.sql.ExecContext(ctx,
+		"UPDATE users SET disabled=?, updated_at=? WHERE id=?",
+		flag, time.Now().Unix(), id,
+	)
+	return err
+}
+
+// DeleteUser removes a user and all wechat accounts owned by that user.
+func (db *DB) DeleteUser(ctx context.Context, id int64) error {
+	tx, err := db.sql.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, "DELETE FROM wechat_accounts WHERE owner_id=?", id); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, "DELETE FROM users WHERE id=?", id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (db *DB) UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error {
+	_, err := db.sql.ExecContext(ctx,
+		"UPDATE users SET password=?, updated_at=? WHERE id=?",
+		passwordHash, time.Now().Unix(), id,
+	)
+	return err
+}
+
+func (db *DB) UpdateUserToken(ctx context.Context, id int64, apiToken string) error {
+	_, err := db.sql.ExecContext(ctx,
+		"UPDATE users SET api_token=?, updated_at=? WHERE id=?",
+		apiToken, time.Now().Unix(), id,
+	)
+	return err
+}
+
+func scanUser(row accountScanner) (*User, error) {
+	var u User
+	var disabled int
+	if err := row.Scan(&u.ID, &u.Username, &u.Password, &u.APIToken, &u.Role, &disabled, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		return nil, err
+	}
+	u.Disabled = disabled != 0
+	return &u, nil
+}
+
 func migrateSessionsTable(ctx context.Context, db *sql.DB) error {
 	oldExists, err := sqliteTableExists(ctx, db, "wmpf_sessions")
 	if err != nil {
@@ -232,7 +371,66 @@ func sqliteTableExists(ctx context.Context, db *sql.DB, name string) (bool, erro
 	return n > 0, err
 }
 
-func (db *DB) UpsertAccount(ctx context.Context, openid, loginBuffer string, alias, nickname, avatar *string, userInfo map[string]any, credentials map[string]any, status *string) (*WechatAccount, error) {
+// migrateOwnerColumn adds the owner_id column to wechat_accounts for existing
+// databases created before multi-user support was introduced.
+func migrateOwnerColumn(ctx context.Context, db *sql.DB) error {
+	exists, err := sqliteTableExists(ctx, db, "wechat_accounts")
+	if err != nil || !exists {
+		return err
+	}
+	has, err := columnExists(ctx, db, "wechat_accounts", "owner_id")
+	if err != nil {
+		return err
+	}
+	if !has {
+		if _, err = db.ExecContext(ctx, "ALTER TABLE wechat_accounts ADD COLUMN owner_id INTEGER"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// migrateUserDisabledColumn adds the disabled column to users for existing
+// databases created before user management support was introduced.
+func migrateUserDisabledColumn(ctx context.Context, db *sql.DB) error {
+	exists, err := sqliteTableExists(ctx, db, "users")
+	if err != nil || !exists {
+		return err
+	}
+	has, err := columnExists(ctx, db, "users", "disabled")
+	if err != nil {
+		return err
+	}
+	if !has {
+		if _, err = db.ExecContext(ctx, "ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func columnExists(ctx context.Context, db *sql.DB, table, column string) (bool, error) {
+	rows, err := db.QueryContext(ctx, "PRAGMA table_info("+table+")")
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notNull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
+func (db *DB) UpsertAccount(ctx context.Context, openid, loginBuffer string, alias, nickname, avatar *string, userInfo map[string]any, credentials map[string]any, status *string, ownerID *int64) (*WechatAccount, error) {
 	now := time.Now().Unix()
 	userJSON, err := marshalNullable(userInfo)
 	if err != nil {
@@ -244,13 +442,14 @@ func (db *DB) UpsertAccount(ctx context.Context, openid, loginBuffer string, ali
 	}
 	_, err = db.sql.ExecContext(ctx,
 		`INSERT INTO wechat_accounts
-		(openid, login_buffer, alias, nickname, avatar, user_info, credentials, status, created_at, updated_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?)
+		(openid, owner_id, login_buffer, alias, nickname, avatar, user_info, credentials, status, created_at, updated_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(openid) DO UPDATE SET
+		owner_id=COALESCE(excluded.owner_id, wechat_accounts.owner_id),
 		login_buffer=excluded.login_buffer, alias=excluded.alias, nickname=excluded.nickname,
 		avatar=excluded.avatar, user_info=excluded.user_info, credentials=excluded.credentials,
 		status=excluded.status, updated_at=excluded.updated_at`,
-		openid, loginBuffer, nullableString(alias), nullableString(nickname), nullableString(avatar),
+		openid, nullableInt(ownerID), loginBuffer, nullableString(alias), nullableString(nickname), nullableString(avatar),
 		userJSON, credJSON, nullableString(status), now, now,
 	)
 	if err != nil {
@@ -288,7 +487,21 @@ func (db *DB) ResolveAccount(ctx context.Context, ref string) (*WechatAccount, e
 }
 
 func (db *DB) ListAccounts(ctx context.Context) ([]*WechatAccount, error) {
-	rows, err := db.sql.QueryContext(ctx, selectAccountSQL+" ORDER BY id")
+	return db.ListAccountsByOwner(ctx, nil)
+}
+
+// ListAccountsByOwner returns accounts owned by ownerID. When ownerID is nil,
+// all accounts (including those owned by users and admin/global) are returned.
+func (db *DB) ListAccountsByOwner(ctx context.Context, ownerID *int64) ([]*WechatAccount, error) {
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if ownerID == nil {
+		rows, err = db.sql.QueryContext(ctx, selectAccountSQL+" ORDER BY id")
+	} else {
+		rows, err = db.sql.QueryContext(ctx, selectAccountSQL+" WHERE owner_id=? ORDER BY id", *ownerID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +671,7 @@ func (a *WechatAccount) Public() AccountPublic {
 	}
 }
 
-const selectAccountSQL = `SELECT id, openid, uin, alias, nickname, avatar, user_info, login_buffer, credentials, status, last_checked_at, created_at, updated_at FROM wechat_accounts`
+const selectAccountSQL = `SELECT id, openid, owner_id, uin, alias, nickname, avatar, user_info, login_buffer, credentials, status, last_checked_at, created_at, updated_at FROM wechat_accounts`
 
 type accountScanner interface {
 	Scan(dest ...any) error
@@ -475,17 +688,20 @@ func (db *DB) scanAccount(row accountScanner) (*WechatAccount, error) {
 func scanAccountRows(row accountScanner) (*WechatAccount, error) {
 	var (
 		a                       WechatAccount
-		uin, lastChecked        sql.NullInt64
+		uin, lastChecked, owner sql.NullInt64
 		alias, nickname, avatar sql.NullString
 		userJSON, credJSON      sql.NullString
 		status                  sql.NullString
 	)
 	err := row.Scan(
-		&a.ID, &a.OpenID, &uin, &alias, &nickname, &avatar, &userJSON,
+		&a.ID, &a.OpenID, &owner, &uin, &alias, &nickname, &avatar, &userJSON,
 		&a.LoginBuffer, &credJSON, &status, &lastChecked, &a.CreatedAt, &a.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
+	}
+	if owner.Valid {
+		a.OwnerID = &owner.Int64
 	}
 	if uin.Valid {
 		a.UIN = &uin.Int64

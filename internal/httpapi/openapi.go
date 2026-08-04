@@ -11,12 +11,14 @@ func newOpenAPISpec() map[string]any {
 		"servers": []map[string]any{
 			{"url": "/"},
 		},
-		"tags": []map[string]any{
-			{"name": "health", "description": "服务健康检查"},
-			{"name": "qr", "description": "微信扫码登录"},
-			{"name": "accounts", "description": "已保存的微信账号"},
-			{"name": "wxapp", "description": "wxapp 业务接口调用"},
-		},
+			"tags": []map[string]any{
+				{"name": "health", "description": "服务健康检查"},
+				{"name": "auth", "description": "注册与登录"},
+				{"name": "qr", "description": "微信扫码登录"},
+				{"name": "accounts", "description": "已保存的微信账号"},
+				{"name": "wxapp", "description": "wxapp 业务接口调用"},
+				{"name": "admin", "description": "管理员用户管理"},
+			},
 		"paths": map[string]any{
 			"/health": map[string]any{
 				"get": openAPIOperation(
@@ -26,6 +28,18 @@ func newOpenAPISpec() map[string]any {
 					nil,
 					defaulted(map[string]any{
 						"200": jsonResponse("服务正常。", refSchema("HealthResponse")),
+					}),
+				),
+			},
+			"/register": map[string]any{
+				"post": openAPIOperation(
+					[]string{"auth"},
+					"注册新用户并获取独立 API Token",
+					nil,
+					jsonRequestBody(refSchema("RegisterRequest")),
+					defaulted(map[string]any{
+						"200": jsonResponse("注册成功，返回独立 API Token。", refSchema("RegisterResponse")),
+						"409": jsonResponse("用户名已存在。", refSchema("APIErrorResponse")),
 					}),
 				),
 			},
@@ -162,6 +176,76 @@ func newOpenAPISpec() map[string]any {
 					}),
 				),
 			},
+			"/admin/users": map[string]any{
+				"get": openAPIOperation(
+					[]string{"admin"},
+					"获取已注册用户列表",
+					nil,
+					nil,
+					defaulted(map[string]any{
+						"200": jsonResponse("已注册用户列表。", arraySchema(refSchema("AdminUserItem"))),
+						"401": jsonResponse("未认证。", refSchema("APIErrorResponse")),
+						"403": jsonResponse("非管理员。", refSchema("APIErrorResponse")),
+					}),
+				),
+			},
+			"/admin/users/{id}/disable": map[string]any{
+				"post": openAPIOperation(
+					[]string{"admin"},
+					"禁用用户",
+					[]map[string]any{pathIntParam("id", "用户 ID。")},
+					nil,
+					defaulted(map[string]any{
+						"200": jsonResponse("禁用结果。", refSchema("AdminUserActionResponse")),
+						"401": jsonResponse("未认证。", refSchema("APIErrorResponse")),
+						"403": jsonResponse("非管理员。", refSchema("APIErrorResponse")),
+						"404": jsonResponse("用户不存在。", refSchema("APIErrorResponse")),
+					}),
+				),
+			},
+			"/admin/users/{id}/enable": map[string]any{
+				"post": openAPIOperation(
+					[]string{"admin"},
+					"启用用户",
+					[]map[string]any{pathIntParam("id", "用户 ID。")},
+					nil,
+					defaulted(map[string]any{
+						"200": jsonResponse("启用结果。", refSchema("AdminUserActionResponse")),
+						"401": jsonResponse("未认证。", refSchema("APIErrorResponse")),
+						"403": jsonResponse("非管理员。", refSchema("APIErrorResponse")),
+						"404": jsonResponse("用户不存在。", refSchema("APIErrorResponse")),
+					}),
+				),
+			},
+			"/admin/users/{id}/password": map[string]any{
+				"post": openAPIOperation(
+					[]string{"admin"},
+					"重置用户密码",
+					[]map[string]any{pathIntParam("id", "用户 ID。")},
+					jsonRequestBody(refSchema("AdminResetPasswordRequest")),
+					defaulted(map[string]any{
+						"200": jsonResponse("重置结果。", refSchema("AdminUserActionResponse")),
+						"400": jsonResponse("密码不符合要求。", refSchema("APIErrorResponse")),
+						"401": jsonResponse("未认证。", refSchema("APIErrorResponse")),
+						"403": jsonResponse("非管理员。", refSchema("APIErrorResponse")),
+						"404": jsonResponse("用户不存在。", refSchema("APIErrorResponse")),
+					}),
+				),
+			},
+			"/admin/users/{id}": map[string]any{
+				"delete": openAPIOperation(
+					[]string{"admin"},
+					"删除用户及级联账号",
+					[]map[string]any{pathIntParam("id", "用户 ID。")},
+					nil,
+					defaulted(map[string]any{
+						"200": jsonResponse("删除结果。", refSchema("AdminUserActionResponse")),
+						"401": jsonResponse("未认证。", refSchema("APIErrorResponse")),
+						"403": jsonResponse("非管理员。", refSchema("APIErrorResponse")),
+						"404": jsonResponse("用户不存在。", refSchema("APIErrorResponse")),
+					}),
+				),
+			},
 		},
 		"components": map[string]any{
 			"schemas": map[string]any{
@@ -175,9 +259,17 @@ func newOpenAPISpec() map[string]any {
 					"msg":  map[string]any{"type": "string", "example": "ref is required"},
 					"data": nullableObjectSchema("错误响应当前固定返回 null。"),
 				}),
-				"HealthResponse": objectSchema([]string{"ok"}, map[string]any{
-					"ok": map[string]any{"type": "boolean"},
-				}),
+			"HealthResponse": objectSchema([]string{"ok"}, map[string]any{
+				"ok": map[string]any{"type": "boolean"},
+			}),
+			"RegisterRequest": objectSchema([]string{"username", "password"}, map[string]any{
+				"username": map[string]any{"type": "string", "description": "用户名，全局唯一（大小写不敏感）。"},
+				"password": map[string]any{"type": "string", "minLength": 6, "description": "密码，至少 6 位。"},
+			}),
+			"RegisterResponse": objectSchema([]string{"username", "api_token"}, map[string]any{
+				"username":  map[string]any{"type": "string"},
+				"api_token": map[string]any{"type": "string", "description": "该用户独立的 API Token，与其他用户隔离。"},
+			}),
 				"QRCreateResponse": objectSchema([]string{"session_id", "status", "image_url"}, map[string]any{
 					"session_id":   map[string]any{"type": "string"},
 					"status":       map[string]any{"type": "string", "example": "pending"},
@@ -237,6 +329,25 @@ func newOpenAPISpec() map[string]any {
 				"WxappResponse": objectSchema([]string{"openid", "result"}, map[string]any{
 					"openid": map[string]any{"type": "string"},
 					"result": freeFormObjectSchema("wxapp 接口返回结果。"),
+				}),
+				"AdminUserItem": objectSchema([]string{"id", "username", "role", "disabled"}, map[string]any{
+					"id":         int64Schema(),
+					"username":   map[string]any{"type": "string"},
+					"role":       map[string]any{"type": "string", "enum": []string{"admin", "user"}},
+					"disabled":   map[string]any{"type": "boolean"},
+					"created_at": int64Schema(),
+					"updated_at": int64Schema(),
+				}),
+				"AdminUserActionResponse": objectSchema([]string{"id", "username"}, map[string]any{
+					"id":       int64Schema(),
+					"username": map[string]any{"type": "string"},
+					"disabled": map[string]any{"type": "boolean", "nullable": true},
+					"action":   map[string]any{"type": "string", "nullable": true, "description": "disable / enable。"},
+					"changed":  map[string]any{"type": "boolean", "nullable": true},
+					"deleted":  map[string]any{"type": "boolean", "nullable": true},
+				}),
+				"AdminResetPasswordRequest": objectSchema([]string{"new_password"}, map[string]any{
+					"new_password": map[string]any{"type": "string", "minLength": 6, "description": "新密码，至少 6 位。"},
 				}),
 			},
 		},
@@ -325,6 +436,16 @@ func pathStringParam(name, description string) map[string]any {
 		"description": description,
 		"required":    true,
 		"schema":      map[string]any{"type": "string"},
+	}
+}
+
+func pathIntParam(name, description string) map[string]any {
+	return map[string]any{
+		"name":        name,
+		"in":          "path",
+		"description": description,
+		"required":    true,
+		"schema":      map[string]any{"type": "integer", "format": "int64"},
 	}
 }
 
