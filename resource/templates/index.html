@@ -1,0 +1,1585 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YYB Go 控制台</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: rgba(17, 24, 39, 0.72);
+      --bg-soft: #0b1220;
+      --surface: rgba(255, 255, 255, 0.05);
+      --surface-strong: rgba(255, 255, 255, 0.09);
+      --ink: #e6edf7;
+      --muted: #94a3b8;
+      --faint: #5b6b84;
+      --line: rgba(148, 163, 184, 0.16);
+      --line-strong: rgba(148, 163, 184, 0.32);
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --primary-soft: rgba(59, 130, 246, 0.14);
+      --accent: #a78bfa;
+      --accent-soft: rgba(167, 139, 250, 0.14);
+      --success: #34d399;
+      --success-soft: rgba(52, 211, 153, 0.14);
+      --warning: #fbbf24;
+      --warning-soft: rgba(251, 191, 36, 0.14);
+      --danger: #f87171;
+      --danger-soft: rgba(248, 113, 113, 0.14);
+      --code-bg: #0a0f1c;
+      --code-ink: #d7e2f0;
+      --radius: 10px;
+      --radius-sm: 8px;
+      --topbar-h: 60px;
+      --sidebar-w: 232px;
+      --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.4);
+      --shadow-lift: 0 12px 32px rgba(2, 6, 23, 0.6);
+      --glow: 0 0 0 1px rgba(59, 130, 246, 0.35), 0 0 24px rgba(59, 130, 246, 0.25);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      height: 100%;
+    }
+
+    body {
+      min-height: 100%;
+      margin: 0;
+      background-color: var(--bg-soft);
+      color: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background-image:
+        radial-gradient(1000px 600px at 8% -10%, rgba(59, 130, 246, 0.16), transparent 60%),
+        radial-gradient(900px 560px at 108% 4%, rgba(167, 139, 250, 0.13), transparent 58%),
+        radial-gradient(760px 520px at 50% 112%, rgba(56, 189, 248, 0.1), transparent 60%),
+        linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+      background-size: auto, auto, auto, 44px 44px, 44px 44px;
+      background-attachment: fixed;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: flex;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ---------- 左侧可拉伸侧边栏 ---------- */
+    .sidebar {
+      width: var(--sidebar-w);
+      flex: 0 0 auto;
+      height: 100vh;
+      position: sticky;
+      top: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      padding: 18px 12px;
+      background: rgba(11, 18, 32, 0.78);
+      border-right: 1px solid rgba(148, 163, 184, 0.12);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      overflow: hidden;
+    }
+
+    .side-brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 0 8px;
+      min-width: 0;
+    }
+
+    .mark {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+      box-shadow: 0 0 18px rgba(99, 102, 241, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    }
+
+    .brand-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .brand-subtitle {
+      margin-top: 1px;
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .side-nav {
+      display: grid;
+      gap: 4px;
+      flex: 1;
+      align-content: start;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--muted);
+      text-align: left;
+      font-size: 13px;
+      font-weight: 500;
+      transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+    }
+
+    .nav-item .nav-ico {
+      width: 16px;
+      height: 16px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      opacity: 0.8;
+    }
+
+    .nav-item:hover {
+      background: var(--surface);
+      color: var(--ink);
+    }
+
+    .nav-item.active {
+      background: var(--primary-soft);
+      border-color: rgba(59, 130, 246, 0.35);
+      color: #e0ebff;
+      box-shadow: inset 3px 0 0 var(--primary);
+    }
+
+    .side-foot {
+      padding: 8px;
+      color: var(--faint);
+      font-size: 11px;
+      border-top: 1px solid var(--line);
+      display: grid;
+      gap: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .side-foot strong {
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    /* 拖拽分隔线 */
+    .resizer {
+      width: 5px;
+      flex: 0 0 auto;
+      margin-left: -3px;
+      cursor: col-resize;
+      z-index: 5;
+      position: relative;
+    }
+
+    .resizer::after {
+      content: "";
+      position: absolute;
+      inset: 0 2px;
+      border-radius: 2px;
+      transition: background 120ms ease;
+    }
+
+    .resizer:hover::after,
+    body.resizing .resizer::after {
+      background: rgba(59, 130, 246, 0.45);
+    }
+
+    body.resizing {
+      cursor: col-resize;
+      user-select: none;
+    }
+
+    /* ---------- 主区域 ---------- */
+    .main {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .topbar {
+      height: var(--topbar-h);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 0 24px;
+      background: rgba(11, 18, 32, 0.62);
+      border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .page-title {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .top-actions,
+    .panel-actions,
+    .inline-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .status-pill {
+      min-height: 28px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 4px 9px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: var(--bg);
+      white-space: nowrap;
+      font-size: 12px;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--faint);
+      flex: 0 0 auto;
+    }
+
+    .status-pill.ok .status-dot,
+    .account-status.alive .status-dot {
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+    }
+
+    .status-pill.bad .status-dot,
+    .account-status.expired .status-dot {
+      background: var(--danger);
+      box-shadow: 0 0 8px var(--danger);
+    }
+
+    /* 右上角用户菜单 */
+    .user-menu {
+      position: relative;
+    }
+
+    .user-avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: 1px solid rgba(129, 140, 248, 0.5);
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      box-shadow: 0 0 12px rgba(99, 102, 241, 0.35);
+    }
+
+    .user-avatar:hover {
+      box-shadow: 0 0 16px rgba(99, 102, 241, 0.55);
+    }
+
+    .user-dropdown {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 8px);
+      min-width: 190px;
+      padding: 6px;
+      background: rgba(17, 24, 39, 0.94);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lift), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      display: grid;
+      gap: 2px;
+      z-index: 30;
+    }
+
+    .user-dropdown-head {
+      padding: 8px 10px 10px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 4px;
+      font-weight: 600;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .dropdown-item {
+      width: 100%;
+      text-align: left;
+      padding: 8px 10px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--ink);
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .dropdown-item:hover {
+      background: var(--surface);
+    }
+
+    .dropdown-item.danger {
+      color: var(--danger);
+    }
+
+    .dropdown-item.danger:hover {
+      background: var(--danger-soft);
+    }
+
+    /* 内容区 */
+    .content {
+      flex: 1 1 auto;
+      padding: 22px 24px 32px;
+      width: 100%;
+      max-width: 1240px;
+      margin: 0 auto;
+    }
+
+    .activity-bar {
+      margin-bottom: 16px;
+      padding: 9px 14px;
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .module {
+      display: none;
+    }
+
+    .module.active {
+      display: grid;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .stat-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .stat-chip {
+      min-height: 30px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 10px;
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .stat-chip strong {
+      color: var(--ink);
+      font-weight: 600;
+    }
+
+    .panel {
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lift), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .section-head {
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .section-title {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .section-title h3 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0;
+    }
+
+    .section-title p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .btn {
+      min-height: 34px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 6px 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: var(--bg);
+      color: var(--ink);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+    }
+
+    .btn:hover {
+      background: var(--surface);
+      border-color: var(--line-strong);
+    }
+
+    .btn:focus-visible,
+    .account-card:focus-visible,
+    .quick-link:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 1px;
+    }
+
+    .btn.primary {
+      background: linear-gradient(135deg, #3b82f6, #6366f1);
+      color: #fff;
+      border-color: rgba(129, 140, 248, 0.5);
+      box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35);
+    }
+
+    .btn.primary:hover {
+      background: linear-gradient(135deg, #2563eb, #4f46e5);
+      border-color: rgba(129, 140, 248, 0.6);
+      box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5);
+    }
+
+    .btn.secondary {
+      border-color: var(--line);
+      background: var(--bg);
+    }
+
+    .btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    /* 账号管理 */
+    .account-grid {
+      padding: 16px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+    }
+
+    .account-card {
+      width: 100%;
+      min-height: 108px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--bg);
+      color: var(--ink);
+      text-align: left;
+      display: grid;
+      grid-template-columns: 40px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+    }
+
+    .account-card:hover {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: rgba(96, 165, 250, 0.5);
+      box-shadow: 0 0 18px rgba(59, 130, 246, 0.18);
+    }
+
+    .account-card.selected {
+      background: var(--primary-soft);
+      border-color: var(--primary);
+      box-shadow: var(--glow);
+    }
+
+    .avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      overflow: hidden;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .account-main {
+      min-width: 0;
+      display: grid;
+      gap: 5px;
+    }
+
+    .account-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    .account-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .account-meta {
+      color: var(--faint);
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .account-openid {
+      color: var(--accent);
+      font-size: 11px;
+      cursor: pointer;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      display: block;
+      user-select: all;
+    }
+
+    .account-openid:hover {
+      color: var(--primary);
+      text-decoration: underline;
+    }
+
+    .account-delete {
+      grid-column: 2;
+      justify-self: start;
+      min-height: 24px;
+      padding: 2px 9px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--bg);
+      color: var(--danger);
+      font-size: 12px;
+      cursor: pointer;
+      user-select: none;
+      line-height: 1.4;
+      transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+    }
+
+    .account-delete:hover {
+      background: var(--danger-soft);
+      border-color: var(--danger);
+    }
+
+    .empty-state {
+      grid-column: 1 / -1;
+      min-height: 96px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      border: 1px dashed var(--line-strong);
+      border-radius: var(--radius-sm);
+      background: var(--bg);
+      padding: 18px;
+      text-align: center;
+      font-size: 13px;
+    }
+
+    /* 调用配置 */
+    .invoke-grid {
+      display: grid;
+      grid-template-columns: minmax(340px, 0.9fr) minmax(420px, 1.1fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel-body {
+      padding: 16px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .form-grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .input,
+    .select,
+    .textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--bg);
+      color: var(--ink);
+      padding: 8px 10px;
+      outline: none;
+      font-size: 13px;
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+
+    .input:focus,
+    .select:focus,
+    .textarea:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+    }
+
+    .textarea {
+      min-height: 164px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      line-height: 1.55;
+      font-size: 13px;
+    }
+
+    .selected-account {
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      padding: 8px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .selected-account strong {
+      color: var(--ink);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .result-panel .panel-body {
+      gap: 10px;
+    }
+
+    .result-box {
+      min-height: 360px;
+      max-height: 560px;
+      margin: 0;
+      overflow: auto;
+      border-radius: var(--radius-sm);
+      background: var(--code-bg);
+      color: var(--code-ink);
+      padding: 14px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .result-box.error {
+      color: #fca5a5;
+    }
+
+    /* 获取 Token */
+    .token-panel .textarea {
+      min-height: 96px;
+    }
+
+    /* 配置文档 */
+    .docs-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 14px;
+    }
+
+    .quick-link {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 14px;
+      background: var(--bg);
+      color: var(--ink);
+      text-decoration: none;
+      display: grid;
+      gap: 4px;
+      font-size: 13px;
+      transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+    }
+
+    .quick-link:hover {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: rgba(96, 165, 250, 0.5);
+      box-shadow: 0 0 18px rgba(59, 130, 246, 0.18);
+    }
+
+    .quick-link b {
+      font-weight: 600;
+    }
+
+    .quick-link span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    /* 修改密码弹窗 */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: rgba(2, 6, 23, 0.6);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+
+    .modal {
+      width: min(380px, 100%);
+      background: rgba(17, 24, 39, 0.94);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: var(--radius);
+      padding: 22px;
+      box-shadow: var(--shadow-lift), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      display: grid;
+      gap: 12px;
+    }
+
+    .modal h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .modal .field {
+      gap: 6px;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .log-line {
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    @media (max-width: 900px) {
+      .invoke-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        width: 200px;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .topbar {
+        padding: 0 16px;
+      }
+
+      .content {
+        padding: 16px;
+      }
+
+      .sidebar {
+        display: none;
+      }
+
+      .resizer {
+        display: none;
+      }
+
+      .side-brand {
+        display: none;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 1ms !important;
+        animation-duration: 1ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="side-brand">
+        <div class="mark" aria-hidden="true">Y</div>
+        <div>
+          <h1 class="brand-title">YYB Go</h1>
+          <div class="brand-subtitle">控制台</div>
+        </div>
+      </div>
+      <nav class="side-nav" aria-label="主导航">
+        <button class="nav-item active" type="button" data-module="accounts">
+          <span class="nav-ico">&#9670;</span>账号管理
+        </button>
+        <button class="nav-item" type="button" data-module="invoke">
+          <span class="nav-ico">&#9881;</span>调用配置
+        </button>
+        <button class="nav-item" type="button" data-module="token">
+          <span class="nav-ico">&#128274;</span>获取 Token
+        </button>
+        <button class="nav-item" type="button" data-module="docs">
+          <span class="nav-ico">&#128220;</span>配置文档
+        </button>
+      </nav>
+      <div class="side-foot">
+        <span>服务：<strong id="footHealth">检测中</strong></span>
+        <span>yyb-go</span>
+      </div>
+    </aside>
+
+    <div class="resizer" id="resizer" title="拖拽调整侧边栏宽度" aria-hidden="true"></div>
+
+    <div class="main">
+      <header class="topbar">
+        <div class="page-title" id="pageTitle">账号管理</div>
+        <div class="top-actions">
+          <span class="status-pill" id="healthPill"><span class="status-dot"></span><span>检测服务中</span></span>
+          <div class="user-menu">
+            <button class="user-avatar" id="userAvatar" type="button" title="账户设置" aria-label="账户设置">A</button>
+            <div class="user-dropdown hidden" id="userDropdown">
+              <div class="user-dropdown-head" id="userName">admin</div>
+              <button class="dropdown-item" id="openChangePassBtn" type="button">&#128274;&nbsp;修改密码</button>
+              <button class="dropdown-item danger" id="logoutBtn" type="button">&#8682;&nbsp;退出登录</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="content">
+        <div class="activity-bar" id="activityLine">尚未执行操作</div>
+
+        <section class="module active" id="module-accounts">
+          <div class="stat-row" aria-label="运行统计">
+            <span class="stat-chip">账号 <strong id="accountCount">0</strong></span>
+            <span class="stat-chip">可用 <strong id="aliveCount">0</strong></span>
+            <span class="stat-chip">能力 <strong id="featureCount">0</strong></span>
+            <span class="stat-chip">当前 <strong id="currentAccountText">未选择</strong></span>
+          </div>
+          <section class="panel" aria-label="账号列表">
+            <div class="section-head">
+              <div class="section-title">
+                <h3>账号列表</h3>
+                <p>点击账号后，调用配置模块会使用该账号</p>
+              </div>
+              <div class="panel-actions">
+                <button class="btn secondary" id="refreshAllBtn" type="button">刷新存活</button>
+                <button class="btn secondary" id="resyncAllBtn" type="button">同步资料</button>
+                <button class="btn secondary" id="reloadAccountsBtn" type="button">重新加载</button>
+                <a class="btn primary" href="/scan">扫码添加</a>
+              </div>
+            </div>
+            <div class="account-grid" id="accountStrip">
+              <div class="empty-state">账号加载中</div>
+            </div>
+          </section>
+        </section>
+
+        <section class="module" id="module-invoke">
+          <div class="invoke-grid">
+            <section class="panel" aria-label="调用配置">
+              <div class="section-head">
+                <div class="section-title">
+                  <h3>调用配置</h3>
+                  <p>配置目标小程序和能力参数</p>
+                </div>
+              </div>
+              <div class="panel-body">
+                <div class="selected-account">
+                  <span>当前账号</span>
+                  <strong id="selectedAccountName">未选择</strong>
+                </div>
+                <div class="form-grid">
+                  <div class="field">
+                    <label for="featureSel">能力</label>
+                    <select class="select" id="featureSel"></select>
+                  </div>
+                  <div class="field">
+                    <label for="appidInput">APPID</label>
+                    <input class="input" id="appidInput" value="wx5306c5978fdb76e4" autocomplete="off" spellcheck="false">
+                  </div>
+                  <div class="field hidden" id="payloadGroup">
+                    <label for="payloadInput">请求 JSON</label>
+                    <textarea class="textarea" id="payloadInput" spellcheck="false">{"api_name":"getUserInfo","data":{},"env":1}</textarea>
+                  </div>
+                </div>
+                <div class="inline-actions">
+                  <button class="btn primary" id="callBtn" type="button">执行调用</button>
+                  <button class="btn secondary" id="clearResultBtn" type="button">清空结果</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel result-panel" aria-label="调用结果">
+              <div class="section-head">
+                <div class="section-title">
+                  <h3>返回结果</h3>
+                  <p id="resultMeta">等待调用</p>
+                </div>
+                <button class="btn secondary" id="copyResultBtn" type="button">复制</button>
+              </div>
+              <div class="panel-body">
+                <pre class="result-box" id="resultBox">选择账号并执行调用后，返回内容会显示在这里。</pre>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="module" id="module-token">
+          <section class="panel token-panel" aria-label="API Token">
+            <div class="section-head">
+              <div class="section-title">
+                <h3>API Token</h3>
+                <p>调用 /wxapp/* 接口时需在请求头添加 Authorization: Bearer &lt;token&gt;</p>
+              </div>
+              <div class="panel-actions">
+                <button class="btn secondary" id="copyTokenBtn" type="button">复制 Token</button>
+                <button class="btn primary" id="rotateTokenBtn" type="button">更换 Token</button>
+              </div>
+            </div>
+            <div class="panel-body">
+              <textarea class="textarea" id="apiTokenInput" readonly spellcheck="false" placeholder="加载中…"></textarea>
+              <p class="log-line">Token 用于服务端接口调用鉴权，请妥善保管。更换后旧 Token 立即失效。</p>
+            </div>
+          </section>
+        </section>
+
+        <section class="module" id="module-docs">
+          <section class="panel" aria-label="配置文档">
+            <div class="section-head">
+              <div class="section-title">
+                <h3>配置文档</h3>
+                <p>接口定义、OpenAPI 与扫码入口</p>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="docs-grid">
+                <a class="quick-link" href="/docs/index.html">
+                  <b>Swagger 文档</b>
+                  <span>浏览完整 OpenAPI 接口定义</span>
+                </a>
+                <a class="quick-link" href="/openapi.json">
+                  <b>OpenAPI JSON</b>
+                  <span>用于接口工具导入与生成客户端</span>
+                </a>
+                <a class="quick-link" href="/scan">
+                  <b>扫码页面</b>
+                  <span>添加新的微信账号</span>
+                </a>
+              </div>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="passModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="passModalTitle">
+      <h3 id="passModalTitle">修改密码</h3>
+      <div class="field">
+        <label for="oldPassInput">旧密码</label>
+        <input class="input" id="oldPassInput" type="password" autocomplete="current-password" placeholder="当前登录密码">
+      </div>
+      <div class="field">
+        <label for="newPassInput">新密码</label>
+        <input class="input" id="newPassInput" type="password" autocomplete="new-password" placeholder="设置新的登录密码">
+      </div>
+      <div class="log-line" id="passMsg">请输入旧密码与新密码</div>
+      <div class="modal-actions">
+        <button class="btn secondary" id="closePassModalBtn" type="button">取消</button>
+        <button class="btn primary" id="changePassBtn" type="button">确认修改</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      accounts: [],
+      features: [
+        { name: "getCode" },
+        { name: "getPhoneNumber" },
+        { name: "operateWxData" }
+      ],
+      selectedOpenID: "",
+      lastResult: ""
+    };
+
+    const $ = id => document.getElementById(id);
+
+    function escapeHTML(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    async function api(method, url, body) {
+      const options = { method, headers: { "Content-Type": "application/json" } };
+      if (body !== undefined) options.body = JSON.stringify(body);
+      const response = await fetch(url, options);
+      const text = await response.text();
+      let data = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = text;
+      }
+      const isEnvelope = data && typeof data === "object" && !Array.isArray(data)
+        && Object.prototype.hasOwnProperty.call(data, "code")
+        && Object.prototype.hasOwnProperty.call(data, "msg")
+        && Object.prototype.hasOwnProperty.call(data, "data");
+      if (!response.ok || (isEnvelope && data.code !== 0)) {
+        const error = new Error(isEnvelope ? data.msg : "HTTP " + response.status);
+        error.status = response.status;
+        error.code = isEnvelope ? data.code : response.status;
+        error.data = isEnvelope ? data.data : data;
+        error.payload = data;
+        throw error;
+      }
+      return isEnvelope ? data.data : data;
+    }
+
+    function accountName(account) {
+      return account.nickname || account.alias || account.openid || "未命名账号";
+    }
+
+    function statusText(status) {
+      if (status === "alive") return "可用";
+      if (status === "expired") return "需重扫";
+      return "待确认";
+    }
+
+    function statusClass(status) {
+      if (status === "alive") return "alive";
+      if (status === "expired") return "expired";
+      return "unknown";
+    }
+
+    function formatChecked(ts) {
+      if (!ts) return "未检测";
+      const date = new Date(ts * 1000);
+      const pad = n => String(n).padStart(2, "0");
+      return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    function setActivity(message) {
+      $("activityLine").textContent = message;
+    }
+
+    function setResult(value, meta, isError) {
+      const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+      state.lastResult = text;
+      $("resultBox").textContent = text;
+      $("resultBox").classList.toggle("error", Boolean(isError));
+      $("resultMeta").textContent = meta || "已更新";
+    }
+
+    function selectedAccount() {
+      return state.accounts.find(item => item.openid === state.selectedOpenID) || null;
+    }
+
+    function syncSelectedAccount() {
+      const selected = selectedAccount();
+      const label = selected ? accountName(selected) : "未选择";
+      $("selectedAccountName").textContent = label;
+      $("currentAccountText").textContent = label;
+      document.querySelectorAll(".account-card").forEach(card => {
+        card.classList.toggle("selected", card.dataset.openid === state.selectedOpenID);
+      });
+    }
+
+    function renderStats() {
+      $("accountCount").textContent = String(state.accounts.length);
+      $("aliveCount").textContent = String(state.accounts.filter(item => item.status === "alive").length);
+      $("featureCount").textContent = String(state.features.length);
+      syncSelectedAccount();
+    }
+
+    function renderAccounts() {
+      const strip = $("accountStrip");
+      if (!state.accounts.length) {
+        strip.innerHTML = `<div class="empty-state">暂无账号，点击“扫码添加”开始添加。</div>`;
+        state.selectedOpenID = "";
+        renderStats();
+        return;
+      }
+
+      if (!state.accounts.some(item => item.openid === state.selectedOpenID)) {
+        state.selectedOpenID = state.accounts[0].openid;
+      }
+
+      strip.innerHTML = "";
+      for (const account of state.accounts) {
+        const name = accountName(account);
+        const cls = statusClass(account.status);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "account-card";
+        button.dataset.openid = account.openid;
+        button.innerHTML = `
+          <span class="avatar">
+            <img alt="" src="/accounts/avatar?ref=${encodeURIComponent(account.openid)}">
+            <span class="avatar-letter hidden">${escapeHTML(name.slice(0, 1).toUpperCase() || "Y")}</span>
+          </span>
+          <span class="account-main">
+            <span class="account-name">${escapeHTML(name)}</span>
+            <span class="account-status ${cls}"><span class="status-dot"></span>${statusText(account.status)}</span>
+            <span class="account-openid" onclick="var t=document.createElement('textarea');t.value=this.textContent;t.style.position='fixed';t.style.left='-9999px';document.body.appendChild(t);t.select();document.execCommand('copy');document.body.removeChild(t);this.textContent='✓ 已复制';var self=this;setTimeout(function(){self.textContent='${escapeHTML(account.openid)}'},2000)">${escapeHTML(account.openid)}</span>
+            <span class="account-meta">uin: ${escapeHTML(account.uin ?? "-")} · ${formatChecked(account.last_checked_at)}</span>
+          </span>
+          <span class="account-delete" role="button" tabindex="0" title="删除账号" aria-label="删除 ${escapeHTML(name)}">删除</span>
+        `;
+        button.querySelector("img").addEventListener("error", event => {
+          event.currentTarget.classList.add("hidden");
+          button.querySelector(".avatar-letter").classList.remove("hidden");
+        });
+        button.addEventListener("click", () => {
+          state.selectedOpenID = account.openid;
+          syncSelectedAccount();
+          setActivity(`已选择账号：${name}`);
+        });
+        button.querySelector(".account-delete").addEventListener("click", event => {
+          event.stopPropagation();
+          deleteAccount(account);
+        });
+        strip.appendChild(button);
+      }
+      renderStats();
+    }
+
+    function renderFeatures() {
+      const select = $("featureSel");
+      if (!state.features.length) {
+        select.innerHTML = `<option value="">暂无能力</option>`;
+        togglePayload();
+        return;
+      }
+      select.innerHTML = state.features.map(feature => {
+        return `<option value="${escapeHTML(feature.name)}" data-name="${escapeHTML(feature.name)}">${escapeHTML(feature.name)}</option>`;
+      }).join("");
+      togglePayload();
+      renderStats();
+    }
+
+    function currentFeatureName() {
+      const option = $("featureSel").selectedOptions[0];
+      return option ? option.dataset.name || "" : "";
+    }
+
+    function togglePayload() {
+      const needsPayload = currentFeatureName().toLowerCase() === "operatewxdata";
+      $("payloadGroup").classList.toggle("hidden", !needsPayload);
+    }
+
+    async function loadHealth() {
+      const pill = $("healthPill");
+      try {
+        await api("GET", "/health");
+        pill.classList.add("ok");
+        pill.classList.remove("bad");
+        pill.querySelector("span:last-child").textContent = "服务正常";
+        $("footHealth").textContent = "正常";
+      } catch {
+        pill.classList.add("bad");
+        pill.classList.remove("ok");
+        pill.querySelector("span:last-child").textContent = "服务异常";
+        $("footHealth").textContent = "异常";
+      }
+    }
+
+    async function loadAccounts() {
+      $("accountStrip").innerHTML = `<div class="empty-state">账号加载中</div>`;
+      try {
+        state.accounts = await api("GET", "/accounts");
+        renderAccounts();
+        setActivity("账号列表已加载");
+      } catch (error) {
+        $("accountStrip").innerHTML = `<div class="empty-state">账号加载失败：${escapeHTML(error.data?.detail || error.message)}</div>`;
+        setActivity("账号列表加载失败");
+      }
+    }
+
+    function loadFeatures() {
+      renderFeatures();
+    }
+
+    async function refreshAll() {
+      const button = $("refreshAllBtn");
+      button.disabled = true;
+      button.textContent = "刷新中";
+      try {
+        const result = await api("POST", "/accounts/refresh");
+        setResult(result, "存活刷新完成", false);
+        await loadAccounts();
+      } catch (error) {
+        setResult(error.data || error.message, "存活刷新失败", true);
+      } finally {
+        button.disabled = false;
+        button.textContent = "刷新存活";
+      }
+    }
+
+    async function resyncAll() {
+      const button = $("resyncAllBtn");
+      button.disabled = true;
+      button.textContent = "同步中";
+      try {
+        const result = await api("POST", "/accounts/resync");
+        setResult(result, "资料同步完成", false);
+        await loadAccounts();
+      } catch (error) {
+        setResult(error.data || error.message, "资料同步失败", true);
+      } finally {
+        button.disabled = false;
+        button.textContent = "同步资料";
+      }
+    }
+
+    async function callFeature() {
+      const account = selectedAccount();
+      if (!account) {
+        setResult("请先选择一个账号。", "缺少账号", true);
+        return;
+      }
+
+      const endpoint = currentFeatureName();
+      const appID = $("appidInput").value.trim();
+      if (!endpoint) {
+        setResult("当前没有可调用能力。", "缺少能力", true);
+        return;
+      }
+      if (!appID) {
+        setResult("请输入 APPID。", "缺少 APPID", true);
+        return;
+      }
+
+      const body = { ref: account.openid, app_id: appID };
+      if (endpoint.toLowerCase() === "operatewxdata") {
+        const raw = $("payloadInput").value.trim();
+        if (!raw) {
+          setResult("operateWxData 需要请求 JSON。", "缺少 payload", true);
+          return;
+        }
+        try {
+          body.payload = JSON.parse(raw);
+        } catch {
+          setResult("请求 JSON 格式不正确。", "JSON 解析失败", true);
+          return;
+        }
+      }
+
+      const button = $("callBtn");
+      button.disabled = true;
+      const startedAt = performance.now();
+      setResult("调用中，首次调用可能需要建立会话。", "请求进行中", false);
+      setActivity(`正在调用 ${endpoint}：${accountName(account)}`);
+
+      try {
+        const result = await api("POST", `/wxapp/${endpoint}`, body);
+        const seconds = ((performance.now() - startedAt) / 1000).toFixed(1);
+        setResult(result, `调用完成，用时 ${seconds}s`, false);
+        await loadAccounts();
+      } catch (error) {
+        setResult(error.data || error.message, `调用失败 ${error.status || ""}`.trim(), true);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function loadToken() {
+      const input = $("apiTokenInput");
+      try {
+        const data = await api("GET", "/token");
+        input.value = data.token;
+      } catch (error) {
+        input.value = "";
+        input.placeholder = "获取失败：" + (error.data?.detail || error.message);
+      }
+    }
+
+    async function rotateToken() {
+      const button = $("rotateTokenBtn");
+      button.disabled = true;
+      try {
+        const data = await api("POST", "/token/rotate");
+        $("apiTokenInput").value = data.token;
+        setActivity("API Token 已更换");
+      } catch (error) {
+        setActivity("更换失败：" + (error.data?.detail || error.message));
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function changePassword() {
+      const oldPassword = $("oldPassInput").value;
+      const newPassword = $("newPassInput").value;
+      if (!oldPassword || !newPassword) {
+        $("passMsg").textContent = "请填写旧密码和新密码";
+        return;
+      }
+      const button = $("changePassBtn");
+      button.disabled = true;
+      try {
+        await api("POST", "/account/password", { old_password: oldPassword, new_password: newPassword });
+        $("passMsg").textContent = "密码已修改，请重新登录";
+        setTimeout(() => { location.href = "/login"; }, 1200);
+      } catch (error) {
+        $("passMsg").textContent = "修改失败：" + (error.data?.detail || error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function logout() {
+      try {
+        await api("POST", "/account/logout");
+      } catch {
+        // fall through and redirect regardless
+      }
+      location.href = "/login";
+    }
+
+    async function deleteAccount(account) {
+      const name = accountName(account);
+      if (!window.confirm(`确定删除账号「${name}」？此操作不可恢复。`)) {
+        return;
+      }
+      setActivity(`正在删除账号：${name}`);
+      try {
+        await api("DELETE", `/accounts?ref=${encodeURIComponent(account.openid)}`);
+        setActivity(`已删除账号：${name}`);
+        await loadAccounts();
+      } catch (error) {
+        setActivity("删除失败：" + (error.data?.detail || error.message));
+      }
+    }
+
+    /* ---------- 模块切换 ---------- */
+    const modules = { accounts: "账号管理", invoke: "调用配置", token: "获取 Token", docs: "配置文档" };
+    function switchModule(name) {
+      document.querySelectorAll(".nav-item").forEach(item => {
+        item.classList.toggle("active", item.dataset.module === name);
+      });
+      document.querySelectorAll(".module").forEach(module => {
+        module.classList.toggle("active", module.id === "module-" + name);
+      });
+      $("pageTitle").textContent = modules[name];
+    }
+    document.querySelectorAll(".nav-item").forEach(item => {
+      item.addEventListener("click", () => switchModule(item.dataset.module));
+    });
+
+    /* ---------- 侧边栏拖拽调整宽度 ---------- */
+    const savedWidth = localStorage.getItem("yyb.sidebar.width");
+    if (savedWidth) {
+      const w = parseInt(savedWidth, 10);
+      if (w >= 200 && w <= 380) {
+        document.documentElement.style.setProperty("--sidebar-w", w + "px");
+      }
+    }
+    const resizer = $("resizer");
+    let resizing = false;
+    resizer.addEventListener("mousedown", event => {
+      resizing = true;
+      document.body.classList.add("resizing");
+      event.preventDefault();
+    });
+    document.addEventListener("mousemove", event => {
+      if (!resizing) return;
+      const width = Math.min(380, Math.max(200, event.clientX));
+      document.documentElement.style.setProperty("--sidebar-w", width + "px");
+    });
+    document.addEventListener("mouseup", () => {
+      if (!resizing) return;
+      resizing = false;
+      document.body.classList.remove("resizing");
+      const width = getComputedStyle(document.documentElement).getPropertyValue("--sidebar-w").trim();
+      localStorage.setItem("yyb.sidebar.width", width);
+    });
+
+    /* ---------- 用户菜单 ---------- */
+    $("userAvatar").addEventListener("click", event => {
+      event.stopPropagation();
+      $("userDropdown").classList.toggle("hidden");
+    });
+    document.addEventListener("click", () => {
+      $("userDropdown").classList.add("hidden");
+    });
+
+    /* ---------- 修改密码弹窗 ---------- */
+    function openPassModal() {
+      $("passMsg").textContent = "请输入旧密码与新密码";
+      $("oldPassInput").value = "";
+      $("newPassInput").value = "";
+      $("passModal").classList.remove("hidden");
+      $("newPassInput").focus();
+    }
+    function closePassModal() {
+      $("passModal").classList.add("hidden");
+    }
+    $("openChangePassBtn").addEventListener("click", () => {
+      $("userDropdown").classList.add("hidden");
+      openPassModal();
+    });
+    $("closePassModalBtn").addEventListener("click", closePassModal);
+    $("passModal").addEventListener("click", event => {
+      if (event.target === $("passModal")) closePassModal();
+    });
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape" && !$("passModal").classList.contains("hidden")) closePassModal();
+    });
+
+    /* ---------- 事件绑定 ---------- */
+    $("reloadAccountsBtn").addEventListener("click", loadAccounts);
+    $("refreshAllBtn").addEventListener("click", refreshAll);
+    $("resyncAllBtn").addEventListener("click", resyncAll);
+    $("featureSel").addEventListener("change", togglePayload);
+    $("callBtn").addEventListener("click", callFeature);
+    $("clearResultBtn").addEventListener("click", () => setResult("结果已清空。", "等待调用", false));
+    $("copyResultBtn").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(state.lastResult || $("resultBox").textContent);
+        setActivity("结果已复制");
+      } catch {
+        setActivity("复制失败，请手动选择结果内容");
+      }
+    });
+    $("copyTokenBtn").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText($("apiTokenInput").value);
+        setActivity("API Token 已复制");
+      } catch {
+        setActivity("复制失败，请手动选择复制");
+      }
+    });
+    $("rotateTokenBtn").addEventListener("click", rotateToken);
+    $("changePassBtn").addEventListener("click", changePassword);
+    $("logoutBtn").addEventListener("click", logout);
+
+    loadHealth();
+    loadFeatures();
+    loadAccounts();
+    loadToken();
+    setInterval(loadHealth, 15000);
+  </script>
+</body>
+</html>
